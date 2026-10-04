@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>[Software Name] - Credit Ledger</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef3f1;--card:#fff;--ink:#12302b;--mute:#5b706b;--line:#d3dedb;--ac:#0f766e;--acx:#fff;--red:#b42318;--amb:#b54708;--grn:#0a7a3d;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1b18;--card:#162824;--ink:#e6f0ed;--mute:#9bb2ac;--line:#2a403b;--ac:#34c3b3;--acx:#06201c;--red:#ff8a7a;--amb:#f2b36b;--grn:#6fd69a}}
+:root[data-theme="dark"]{--bg:#0e1b18;--card:#162824;--ink:#e6f0ed;--mute:#9bb2ac;--line:#2a403b;--ac:#34c3b3;--acx:#06201c;--red:#ff8a7a;--amb:#f2b36b;--grn:#6fd69a}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Noto Sans",system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0}h2{font-size:17px;margin:0 0 10px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+input,select,textarea{width:100%;padding:10px;margin:4px 0 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+label{font-size:14px;color:var(--mute)}
+button{font:inherit;font-weight:600;padding:10px 14px;border-radius:8px;border:1px solid var(--ac);background:var(--ac);color:var(--acx);cursor:pointer}
+button.alt{background:transparent;color:var(--ac)}button.del{background:transparent;color:var(--red);border-color:var(--line);padding:4px 8px}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--amb);outline-offset:2px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.cust{cursor:pointer}.cust b{display:block}.mute{color:var(--mute);font-size:14px}
+.bal{font-weight:700;white-space:nowrap}.red{color:var(--red)}.grn{color:var(--grn)}.amb{color:var(--amb)}
+.alert{border-left:5px solid var(--red)}.alert.soon{border-left-color:var(--amb)}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}.grid3 button{padding:10px 4px;font-size:14px}a.btn{display:block;text-align:center;text-decoration:none;font-weight:600;padding:10px 14px;border-radius:8px;background:var(--ac);color:var(--acx);margin-top:8px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tab{display:flex;gap:8px;margin-bottom:10px}.tab button{flex:1}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}td.n,th.n{text-align:right}
+.scroll{overflow-x:auto}
+#print{display:none}
+@media print{body{background:#fff;color:#000}main{display:none}#print{display:block;padding:10px;color:#000}#print table{font-size:13px}#print th,#print td{border-bottom:1px solid #999}}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<section id="print"></section>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/5.0.2/jspdf.plugin.autotable.min.js"></script>
+<script>
+var APP_NAME="[Software Name]";
+var storeOk=true,db={c:[]},cur=null,store=null;
+try{store=window.localStorage;db=JSON.parse(store.getItem("khata")||'{"c":[]}')}catch(e){db={c:[]}}
+if(!db.s)db.s=[];if(!db.i)db.i=[];if(!db.b)db.b=[];if(!db.set)db.set={shop:"",addr:"",phone:"",cc:"91"};
+function save(){try{if(!store)throw 0;store.setItem("khata",JSON.stringify(db))}catch(e){storeOk=false}}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function rs(n){return "₹"+Number(n).toLocaleString("en-IN")}
+function today(){var d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function fd(s){if(!s)return"-";var p=s.split("-");return p[2]+"/"+p[1]+"/"+p[0]}
+function tot(c){var m=0,p=0;c.t.forEach(function(x){x.k==="m"?m+=x.a:p+=x.a});return{m:m,p:p,b:m-p}}
+function days(s){return Math.round((new Date(s)-new Date(today()))/864e5)}
+function due(){return db.c.filter(function(c){return c.due&&tot(c).b>0&&days(c.due)<=2}).sort(function(a,b){return a.due<b.due?-1:1})}
+function id(x){return db.c.filter(function(c){return c.id===x})[0]}
+
+function home(){
+cur=null;var d=due(),h='<div class="top"><h1>'+esc(APP_NAME)+'</h1><button class="alt" onclick="notif()">🔔 Turn on alarm</button></div><div class="grid3"><button onclick="billp()">🧾 New Bill</button><button onclick="catp()">📦 Shop & Items</button><button onclick="rep()">📊 Report</button></div>';
+if(d.length){h+='<div class="card alert"><h2>Payments Due</h2>';d.forEach(function(c){var n=days(c.due);h+='<div class="row cust" onclick="open_('+c.id+')"><span>'+esc(c.shop)+'<br><span class="mute">'+esc(c.phone)+'</span></span><span class="bal '+(n<0?'red':'amb')+'">'+(n<0?Math.abs(n)+' days late':n===0?'Today':n+' days left')+'<br>'+rs(tot(c).b)+'</span></div>'});h+='</div>'}
+h+='<div class="card"><h2>Add New Customer</h2><label>Shop name</label><input id="s"><label>Owner name</label><input id="o"><label>Phone number</label><input id="p" type="tel"><label>WhatsApp number</label><input id="w" type="tel"><button onclick="addC()">Save customer</button></div>';
+h+='<h2>All customers ('+db.c.length+')</h2>';
+if(!db.c.length)h+='<p class="mute">No customers yet. Add your first customer above.</p>';
+db.c.forEach(function(c){var b=tot(c).b;h+='<div class="card row cust" onclick="open_('+c.id+')"><span><b>'+esc(c.shop)+'</b><span class="mute">'+esc(c.owner)+' · '+esc(c.phone)+'</span></span><span class="bal '+(b>0?'red':'grn')+'">'+(b>0?'Due '+rs(b):'Settled')+'</span></div>'});
+h+=backupCard();document.getElementById("app").innerHTML=h}
+
+function addC(){var s=v("s"),o=v("o"),p=v("p");if(!s){alert("Enter the shop name");return}
+db.c.push({id:Date.now(),shop:s,owner:o,phone:p,wa:v("w"),due:"",t:[]});save();home()}
+function v(i){return document.getElementById(i).value.trim()}
+function open_(x){cur=x;vt="credit";scr(0);view()}
+function scr(){window.scrollTo(0,0)}
+
+var vt="credit",tabs=["credit","inst","wa"];
+function sv(i){vt=tabs[i];view()}
+function view(){
+var c=id(cur),t=tot(c);
+var h='<div class="top"><button class="alt" onclick="home()">← Back</button><button onclick="pdf()">📄 Download PDF</button></div>';
+h+='<div class="card"><h2>'+esc(c.shop)+'</h2><div class="mute">'+esc(c.owner)+' · '+esc(c.phone)+'</div><div class="grid2" style="margin-top:10px"><div>Total business (goods)<br><b>'+rs(t.m)+'</b></div><div>Total received<br><b class="grn">'+rs(t.p)+'</b></div></div><h2 class="bal '+(t.b>0?'red':'grn')+'" style="margin-top:10px">Balance due: '+rs(t.b)+'</h2><div>Payment due date: <b>'+fd(c.due)+'</b></div></div>';
+h+='<div class="tab">'+[["Credit"],["Installments"],["WhatsApp"]].map(function(x,i){return '<button class="'+(vt===tabs[i]?'':'alt')+'" onclick="sv('+i+')">'+x[0]+'</button>'}).join("")+'</div>';
+if(vt==="wa")h+=waCard(c);
+else{var m=vt==="credit",k=m?"m":"p",ls=c.t.filter(function(x){return x.k===k});
+h+='<div class="card"><h2>'+(m?'Goods taken on credit':'Installment received')+'</h2><label>Amount (₹)</label><input id="a" type="number" inputmode="decimal"><label>Date</label><input id="d" type="date" value="'+today()+'"><label>'+(m?'Goods / note (optional)':'Note (optional)')+'</label><input id="n"><label>Next payment due date (for alarm)</label><input id="u" type="date" value="'+esc(c.due)+'"><button onclick="addT(\''+k+'\')">'+(m?'Save credit entry':'Save installment')+'</button></div>';
+h+='<div class="card"><h2>'+(m?'Credit history':'Installment history')+' ('+rs(m?t.m:t.p)+')</h2><div class="scroll"><table><tr><th>Date</th><th>Details</th><th class="n">Amount</th><th></th></tr>';
+ls.slice().reverse().forEach(function(x){h+='<tr><td>'+fd(x.d)+'</td><td>'+(x.n?esc(x.n):(m?'Goods':'Installment'))+'</td><td class="n '+(m?'red':'grn')+'">'+rs(x.a)+'</td><td><button class="del" onclick="delT('+x.i+')">✕</button></td></tr>'});
+if(!ls.length)h+='<tr><td colspan="4" class="mute">No entries yet.</td></tr>';
+h+='</table></div></div>'}
+h+='<button class="del" onclick="delC()">Delete this customer</button>';
+document.getElementById("app").innerHTML=h}
+
+function addT(k){var c=id(cur),a=parseFloat(document.getElementById("a").value);if(!a||a<=0){alert("Enter a valid amount");return}
+c.t.push({i:Date.now(),k:k,a:a,d:v("d")||today(),n:v("n")});c.due=v("u");save();view()}
+function delT(i){if(!confirm("Delete this entry?"))return;var c=id(cur);c.t=c.t.filter(function(x){return x.i!==i});save();view()}
+function delC(){if(!confirm("Delete this customer and all their records?"))return;db.c=db.c.filter(function(c){return c.id!==cur});save();home()}
+
+function pdfP(){var c=id(cur),t=tot(c),run=0;
+var h='<h2>'+esc(APP_NAME)+' - Credit Statement</h2><p><b>Shop:</b> '+esc(c.shop)+'<br><b>Owner:</b> '+esc(c.owner)+'<br><b>Phone:</b> '+esc(c.phone)+'<br><b>Date:</b> '+fd(today())+'</p><table><tr><th>Date</th><th>Details</th><th class="n">Goods</th><th class="n">Received</th><th class="n">Balance</th></tr>';
+c.t.slice().sort(function(a,b){return a.d<b.d?-1:a.d>b.d?1:a.i-b.i}).forEach(function(x){run+=x.k==="m"?x.a:-x.a;h+='<tr><td>'+fd(x.d)+'</td><td>'+esc(x.n||(x.k==="m"?"Goods":"Installment"))+'</td><td class="n">'+(x.k==="m"?rs(x.a):"")+'</td><td class="n">'+(x.k==="p"?rs(x.a):"")+'</td><td class="n">'+rs(run)+'</td></tr>'});
+h+='<tr><th colspan="2">Total</th><th class="n">'+rs(t.m)+'</th><th class="n">'+rs(t.p)+'</th><th class="n">'+rs(t.b)+'</th></tr></table><p>Total business done: <b>'+rs(t.m)+'</b><br>Total money received: <b>'+rs(t.p)+'</b></p><h3>Balance due: '+rs(t.b)+'</h3><p>Payment due date: '+fd(c.due)+'</p>';
+document.getElementById("print").innerHTML=h;window.print()}
+
+function notif(){if(!("Notification" in window)){alert("Notifications are not supported on this device. Customers with due dates will show in the red box at the top.");return}
+Notification.requestPermission().then(function(r){alert(r==="granted"?"Alarm is on. You will be notified about due customers when the app opens.":"Permission not granted.");ping()})}
+function ping(){try{if(Notification.permission==="granted"){var d=due();if(d.length)new Notification(APP_NAME,{body:d.length+" customers have payments due soon"})}}catch(e){}}
+var rm=today().slice(0,7);
+function mf(k){return k.slice(5)+"/"+k.slice(0,4)}
+function pend(){var p=0;db.c.forEach(function(c){p+=tot(c).b});return p}
+function rows(){var r=[];
+db.c.forEach(function(c){c.t.forEach(function(x){r.push({d:x.d,sale:x.k==="m"?x.a:0,rec:x.k==="p"?x.a:0,exp:0})})});
+db.s.forEach(function(x){r.push({d:x.d,sale:x.k==="s"?x.a:0,rec:x.k==="s"?x.a:0,exp:x.k==="e"?x.a:0})});return r}
+function grp(n){var g={};rows().forEach(function(x){var k=x.d.slice(0,n),o=g[k]=g[k]||{sale:0,rec:0,exp:0};o.sale+=x.sale;o.rec+=x.rec;o.exp+=x.exp});return g}
+function sm(g){var o={sale:0,rec:0,exp:0};for(var k in g){o.sale+=g[k].sale;o.rec+=g[k].rec;o.exp+=g[k].exp}return o}
+function trs(g,f){var h="";Object.keys(g).sort().forEach(function(k){var o=g[k],pr=o.sale-o.exp;h+='<tr><td>'+f(k)+'</td><td class="n">'+rs(o.sale)+'</td><td class="n">'+rs(o.rec)+'</td><td class="n">'+rs(o.exp)+'</td><td class="n '+(pr>=0?'grn':'red')+'">'+rs(pr)+'</td></tr>'});return h||'<tr><td colspan="5" class="mute">No data</td></tr>'}
+var TH='<tr><th>Date</th><th class="n">Sales</th><th class="n">Received</th><th class="n">Expenses</th><th class="n">Profit</th></tr>';
+function rtab(){var d=grp(10),m={};for(var k in d)if(k.slice(0,7)===rm)m[k]=d[k];return{m:m,s:sm(m)}}
+function rep(){cur=null;var r=rtab(),s=r.s;
+var h='<div class="top"><button class="alt" onclick="home()">← Back</button><button onclick="rpdf()">📄 Download PDF</button></div>';
+h+='<div class="card"><h2>New Entry: Cash Sale or Expense</h2><select id="k2"><option value="s">Cash sale (money received)</option><option value="e">Expense (money spent)</option></select><label>Amount (₹)</label><input id="a2" type="number" inputmode="decimal"><label>Date</label><input id="d2" type="date" value="'+today()+'"><label>Note (optional)</label><input id="n2"><button onclick="addS()">Save entry</button></div>';
+h+='<div class="card"><label>Select month</label><input type="month" value="'+rm+'" onchange="rm=this.value||today().slice(0,7);rep()"><h2>Summary for '+mf(rm)+'</h2><div class="grid2"><div>Total business<br><b>'+rs(s.sale)+'</b></div><div>Money received<br><b class="grn">'+rs(s.rec)+'</b></div><div>Expenses<br><b class="red">'+rs(s.exp)+'</b></div><div>Profit<br><b class="'+(s.sale-s.exp>=0?'grn':'red')+'">'+rs(s.sale-s.exp)+'</b></div></div><p>Cash in hand (received − expenses): <b>'+rs(s.rec-s.exp)+'</b><br>Total credit pending (all customers): <b class="red">'+rs(pend())+'</b></p></div>';
+h+='<div class="card"><h2>Daily Summary</h2><div class="scroll"><table>'+TH+trs(r.m,fd)+'</table></div></div>';
+h+='<div class="card"><h2>Monthly Summary</h2><div class="scroll"><table>'+TH.replace("Date","Month")+trs(grp(7),mf)+'</table></div></div>';
+h+=itemsCard();h+='<div class="card"><h2>Cash Sales & Expense Entries</h2><div class="scroll"><table>';
+var l=db.s.filter(function(x){return x.d.slice(0,7)===rm}).sort(function(a,b){return a.d<b.d?1:-1});
+l.forEach(function(x){h+='<tr><td>'+fd(x.d)+'</td><td>'+(x.k==="s"?'Cash sale':'Expense')+(x.n?' · '+esc(x.n):'')+'</td><td class="n '+(x.k==="s"?'grn':'red')+'">'+rs(x.a)+'</td><td><button class="del" onclick="delS('+x.i+')">✕</button></td></tr>'});
+if(!l.length)h+='<tr><td class="mute">No entries this month.</td></tr>';
+document.getElementById("app").innerHTML=h+'</table></div></div>';scr()}
+function addS(){var a=parseFloat(document.getElementById("a2").value);if(!a||a<=0){alert("Enter a valid amount");return}
+db.s.push({i:Date.now(),k:v("k2"),a:a,d:v("d2")||today(),n:v("n2")});save();rep()}
+function delS(i){if(!confirm("Delete this entry?"))return;db.s=db.s.filter(function(x){return x.i!==i});save();rep()}
+function rpdfP(){var r=rtab(),s=r.s;
+var h='<h2>'+esc(APP_NAME)+' - Sales & Profit Report</h2><p>Month: '+mf(rm)+'<br>Date: '+fd(today())+'</p><table>'+TH+trs(r.m,fd)+'<tr><th>Total</th><th class="n">'+rs(s.sale)+'</th><th class="n">'+rs(s.rec)+'</th><th class="n">'+rs(s.exp)+'</th><th class="n">'+rs(s.sale-s.exp)+'</th></tr></table>';
+h+='<p>Total business done: <b>'+rs(s.sale)+'</b><br>Total money received: <b>'+rs(s.rec)+'</b><br>Total expenses: <b>'+rs(s.exp)+'</b><br>Profit: <b>'+rs(s.sale-s.exp)+'</b><br>Cash in hand: <b>'+rs(s.rec-s.exp)+'</b><br>Credit pending (all customers): <b>'+rs(pend())+'</b></p><h3>By month</h3><table>'+TH.replace("Date","Month")+trs(grp(7),mf)+'</table>';
+document.getElementById("print").innerHTML=h;window.print()}
+var cart=[],bn="",bc="",bm="cash",bt="";
+function r2(n){return Math.round(n*100)/100}
+function shopCard(){var t=db.set;return '<div class="card"><h2>Your shop details (shown on bills)</h2><label>Shop name</label><input id="ss" value="'+esc(t.shop)+'"><label>Address (optional)</label><input id="sa" value="'+esc(t.addr)+'"><label>Phone (optional)</label><input id="sp" value="'+esc(t.phone)+'"><label>Country code for WhatsApp</label><input id="sc" value="'+esc(t.cc)+'"><button onclick="saveShop()">Save shop details</button></div>'}
+function saveShop(){db.set={shop:v("ss"),addr:v("sa"),phone:v("sp"),cc:v("sc")||"91"};save();alert("Shop details saved")}
+function catp(){cur=null;var h='<div class="top"><button class="alt" onclick="home()">← Back</button></div>'+shopCard()+'<div class="card"><h2>Add item to catalogue</h2><label>Item name</label><input id="in"><label>Unit</label><select id="iu"><option>kg</option><option>g</option><option>litre</option><option>pcs</option><option>dozen</option><option>box</option><option>packet</option></select><label>Price per unit (₹)</label><input id="ip" type="number" inputmode="decimal"><button onclick="addI()">Save item</button></div><div class="card"><h2>Catalogue ('+db.i.length+')</h2><table>';
+db.i.forEach(function(x){h+='<tr><td>'+esc(x.n)+'</td><td class="n">'+rs(x.p)+' / '+esc(x.u)+'</td><td><button class="del" onclick="delI('+x.id+')">✕</button></td></tr>'});
+if(!db.i.length)h+='<tr><td class="mute">No items yet.</td></tr>';
+document.getElementById("app").innerHTML=h+'</table></div>';scr()}
+function addI(){var n=v("in"),p=parseFloat(v("ip"));if(!n||isNaN(p)||p<0){alert("Enter the item name and price");return}
+db.i.push({id:Date.now(),n:n,u:v("iu"),p:p});save();catp()}
+function delI(i){if(!confirm("Delete this item?"))return;db.i=db.i.filter(function(x){return x.id!==i});save();catp()}
+function bget(){if(document.getElementById("bn")){bn=v("bn");bc=v("bc");bm=v("bm");bt=v("bt")}}
+function bcalc(){var q=0;cart.forEach(function(l){q+=l.q*l.r});q=r2(q);var p=parseFloat(bt)||0,x=r2(q*p/100);return{sub:q,p:p,tax:x,tot:r2(q+x)}}
+function itm(){return db.i.filter(function(i){return String(i.id)===v("bi")})[0]}
+function bpr(){var x=itm();document.getElementById("br").value=x.p;document.getElementById("bl").textContent="Quantity ("+x.u+")"}
+function addL(){bget();var x=itm(),q=parseFloat(v("bq")),r=parseFloat(v("br"));if(!x||!(q>0)||isNaN(r)){alert("Enter the quantity and rate");return}cart.push({n:x.n,u:x.u,q:q,r:r});billp()}
+function delL(i){bget();cart.splice(i,1);billp()}
+function billp(){cur=null;var t=bcalc(),h='<div class="top"><button class="alt" onclick="home()">← Back</button><button class="alt" onclick="catp()">📦 Shop & Items</button></div>';
+if(!db.set.shop)h+='<div class="card alert soon">Add your shop name under Shop & Items so it appears on the bill.</div>';
+h+='<div class="card"><h2>New Bill</h2>';
+if(!db.i.length)h+='<p class="mute">Your catalogue is empty. Add items under Shop & Items first.</p>';
+else h+='<label>Item</label><select id="bi" onchange="bpr()">'+db.i.map(function(x){return '<option value="'+x.id+'">'+esc(x.n)+' ('+esc(x.u)+')</option>'}).join("")+'</select><div class="grid2"><div><label id="bl">Quantity ('+esc(db.i[0].u)+')</label><input id="bq" type="number" inputmode="decimal"></div><div><label>Rate (₹)</label><input id="br" type="number" inputmode="decimal" value="'+db.i[0].p+'"></div></div><button onclick="addL()">Add to bill</button>';
+h+='</div><div class="card"><h2>Bill items</h2><div class="scroll"><table>';
+cart.forEach(function(l,i){h+='<tr><td>'+esc(l.n)+'<br><span class="mute">'+l.q+' '+esc(l.u)+' × '+rs(l.r)+'</span></td><td class="n">'+rs(r2(l.q*l.r))+'</td><td><button class="del" onclick="delL('+i+')">✕</button></td></tr>'});
+if(!cart.length)h+='<tr><td class="mute">No items added yet.</td></tr>';
+h+='</table></div><label>Tax % (optional)</label><input id="bt" type="number" inputmode="decimal" value="'+esc(bt)+'" onchange="bget();billp()"><p>Subtotal: '+rs(t.sub)+(t.p?'<br>Tax ('+t.p+'%): '+rs(t.tax):'')+'</p><h2>Total: '+rs(t.tot)+'</h2>';
+h+='<label>Bill to (name)</label><input id="bn" value="'+esc(bn)+'"><label>Link to customer (optional)</label><select id="bc"><option value="">None</option>'+db.c.map(function(c){return '<option value="'+c.id+'"'+(String(c.id)===bc?' selected':'')+'>'+esc(c.shop)+'</option>'}).join("")+'</select><label>Payment</label><select id="bm"><option value="cash"'+(bm==="cash"?' selected':'')+'>Paid now (cash sale)</option><option value="credit"'+(bm==="credit"?' selected':'')+'>On credit (add to customer balance)</option></select><button onclick="saveBill()">Save bill & download PDF</button></div>';
+h+='<div class="card"><h2>Recent bills</h2><div class="scroll"><table>';
+db.b.slice(-10).reverse().forEach(function(b){h+='<tr><td>#'+b.no+'<br><span class="mute">'+fd(b.d)+'</span></td><td>'+esc(b.name||"Customer")+'</td><td class="n">'+rs(b.tot)+'</td><td><button class="alt" onclick="reprint('+b.id+')">PDF</button></td></tr>'});
+if(!db.b.length)h+='<tr><td class="mute">No bills yet.</td></tr>';
+document.getElementById("app").innerHTML=h+'</table></div></div>';scr()}
+function saveBill(){bget();if(!cart.length){alert("Add at least one item");return}
+if(bm==="credit"&&!bc){alert("Select the customer for a credit bill");return}
+var t=bcalc(),c=bc?id(+bc):null,no=db.b.length+1,d=today();
+var b={id:Date.now(),no:no,d:d,name:bn||(c?c.shop:""),cust:c?c.id:0,lines:cart.slice(),sub:t.sub,taxp:t.p,tax:t.tax,tot:t.tot,mode:bm};
+db.b.push(b);
+if(bm==="credit")c.t.push({i:Date.now(),k:"m",a:t.tot,d:d,n:"Bill #"+no});else db.s.push({i:Date.now(),k:"s",a:t.tot,d:d,n:"Bill #"+no});
+cart=[];bn="";bc="";bt="";save();printBill(b);billp()}
+function reprint(i){printBill(db.b.filter(function(b){return b.id===i})[0])}
+function printBillP(b){var s=db.set,h='<h2 style="text-align:center;margin:0">'+esc(s.shop||APP_NAME)+'</h2><p style="text-align:center;margin:2px 0 14px">'+esc(s.addr)+(s.phone?(s.addr?'<br>':'')+'Phone: '+esc(s.phone):'')+'</p><h3 style="text-align:center">BILL</h3><p>Bill No: <b>'+b.no+'</b><br>Date: '+fd(b.d)+'<br>Billed to: <b>'+esc(b.name||"Customer")+'</b></p><table><tr><th>#</th><th>Item</th><th class="n">Qty</th><th class="n">Rate</th><th class="n">Amount</th></tr>';
+b.lines.forEach(function(l,i){h+='<tr><td>'+(i+1)+'</td><td>'+esc(l.n)+'</td><td class="n">'+l.q+' '+esc(l.u)+'</td><td class="n">'+rs(l.r)+'</td><td class="n">'+rs(r2(l.q*l.r))+'</td></tr>'});
+h+='<tr><td colspan="4" class="n">Subtotal</td><td class="n">'+rs(b.sub)+'</td></tr>'+(b.taxp?'<tr><td colspan="4" class="n">Tax ('+b.taxp+'%)</td><td class="n">'+rs(b.tax)+'</td></tr>':'')+'<tr><th colspan="4" class="n">Total</th><th class="n">'+rs(b.tot)+'</th></tr></table><p>Payment: '+(b.mode==="credit"?'On credit':'Paid')+'</p><p style="text-align:center">Thank you for your business!</p>';
+document.getElementById("print").innerHTML=h;window.print()}
+function itemsCard(){var m={};db.b.filter(function(b){return b.d.slice(0,7)===rm}).forEach(function(b){b.lines.forEach(function(l){var k=l.n+" ("+l.u+")",o=m[k]=m[k]||{q:0,a:0};o.q+=l.q;o.a+=l.q*l.r})});
+var h='<div class="card"><h2>Items sold in '+mf(rm)+'</h2><div class="scroll"><table><tr><th>Item</th><th class="n">Qty</th><th class="n">Amount</th></tr>',ks=Object.keys(m).sort();
+ks.forEach(function(k){h+='<tr><td>'+esc(k)+'</td><td class="n">'+r2(m[k].q)+'</td><td class="n">'+rs(r2(m[k].a))+'</td></tr>'});
+if(!ks.length)h+='<tr><td colspan="3" class="mute">No billed items this month.</td></tr>';return h+'</table></div></div>'}
+function waMsg(c,k){var s=db.set.shop||"our shop",nm=c.owner||c.shop,b=rs(tot(c).b),d=c.due?fd(c.due):"the agreed date";
+return ["Hello "+nm+",\n\nGreetings from "+s+". This is a gentle reminder that the payment of "+b+" was due on "+d+". Kindly arrange the payment today.\n\nThank you for your business.",
+"Hello "+nm+",\n\nFollowing up on our earlier message from "+s+". Your outstanding balance of "+b+" (due "+d+") is still pending. Please let us know when we can expect the payment.\n\nThank you for your prompt attention.",
+"Dear "+nm+",\n\nThis is our final reminder from "+s+" regarding the pending balance of "+b+", due since "+d+". Kindly clear the amount at the earliest, or call us today to confirm a payment date.\n\nWe value your association and appreciate your cooperation."][k]}
+function waCard(c){var k=c.due?(days(c.due)>=0?0:days(c.due)>=-2?1:2):0;
+return '<div class="card"><h2>WhatsApp payment reminder</h2><label>WhatsApp number</label><div class="row"><input id="wn" type="tel" value="'+esc(c.wa||"")+'" style="margin:4px 0"><button class="alt" onclick="saveWa()">Save</button></div><label>Message</label><select id="wt" onchange="waSel()"><option value="0"'+(k===0?' selected':'')+'>1st reminder (polite)</option><option value="1"'+(k===1?' selected':'')+'>Follow-up 1 (after due date)</option><option value="2"'+(k===2?' selected':'')+'>Follow-up 2 (final reminder)</option></select><textarea id="wm" rows="8">'+esc(waMsg(c,k))+'</textarea><a class="btn" target="_blank" rel="noopener" href="#" onclick="return waLink(this)">Open in WhatsApp</a><p class="mute">Set the payment due date in New Entry. The message is picked by how many days the payment is overdue, and you can edit it before sending.</p></div>'}
+function waSel(){document.getElementById("wm").value=waMsg(id(cur),+v("wt"))}
+function saveWa(){id(cur).wa=v("wn");save();alert("WhatsApp number saved")}
+function waLink(a){var n=v("wn").replace(/\D/g,"");if(!n){alert("Add the customer's WhatsApp number first");return false}
+if(n.length===10)n=(db.set.cc||"91")+n;a.href="https://wa.me/"+n+"?text="+encodeURIComponent(v("wm"));return true}
+function T(s){return String(s==null?"":s).replace(/[^\x20-\x7E\u00A0-\u00FF]/g,"?")}
+function M(n){return "Rs. "+Number(n).toLocaleString("en-IN")}
+function fnm(s){return String(s).replace(/[^a-z0-9]+/gi,"-").replace(/^-|-$/g,"")||"file"}
+function dl(name,blob){function plain(){var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href)},4000)}
+if(window.claude&&window.claude.use){window.claude.use("downloads").then(function(d){if(!d){plain();return}return d.save({filename:name,data:blob}).catch(function(e){if(!e||e.code!=="declined")alert("Could not download the PDF.")})}).catch(plain)}else plain()}
+function mkpdf(file,title,sub,info,tables,notes,fb){
+var J=window.jspdf&&window.jspdf.jsPDF,AT=window["jspdf-autotable"];
+if(!J||!(AT||J.API.autoTable)){fb();return}
+var doc=new J({unit:"pt",format:"a4"}),y=48,W=doc.internal.pageSize.getWidth();
+doc.setFont("helvetica","bold");doc.setFontSize(18);doc.text(T(title),W/2,y,{align:"center"});y+=18;
+doc.setFont("helvetica","normal");doc.setFontSize(10);
+sub.forEach(function(x){doc.text(T(x),W/2,y,{align:"center"});y+=13});
+y+=10;doc.setFontSize(11);
+info.forEach(function(x){doc.text(T(x),40,y);y+=15});
+y+=6;
+tables.forEach(function(t){var o={startY:y,head:[t.head],body:t.body,foot:t.foot,theme:"grid",styles:{fontSize:9,cellPadding:4},headStyles:{fillColor:[15,118,110]},footStyles:{fillColor:[230,238,236],textColor:20},columnStyles:t.cs||{},margin:{left:40,right:40}};
+if(AT&&AT.autoTable)AT.autoTable(doc,o);else doc.autoTable(o);
+y=((doc.lastAutoTable&&doc.lastAutoTable.finalY)||y+40)+18});
+doc.setFont("helvetica","bold");doc.setFontSize(11);
+notes.forEach(function(x){if(y>790){doc.addPage();y=48}doc.text(T(x),40,y);y+=16});
+dl(file,doc.output("blob"))}
+var RC={2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}};
+function pdf(){var c=id(cur),t=tot(c),run=0,body=[];
+c.t.slice().sort(function(a,b){return a.d<b.d?-1:a.d>b.d?1:a.i-b.i}).forEach(function(x){run+=x.k==="m"?x.a:-x.a;body.push([fd(x.d),T(x.n||(x.k==="m"?"Goods":"Installment")),x.k==="m"?M(x.a):"",x.k==="p"?M(x.a):"",M(run)])});
+mkpdf("statement-"+fnm(c.shop)+".pdf",APP_NAME+" - Credit Statement",[],["Shop: "+c.shop,"Owner: "+c.owner,"Phone: "+c.phone,"Date: "+fd(today())],[{head:["Date","Details","Goods","Received","Balance"],body:body,foot:[["Total","",M(t.m),M(t.p),M(t.b)]],cs:RC}],["Total business done: "+M(t.m),"Total money received: "+M(t.p),"Balance due: "+M(t.b),"Payment due date: "+fd(c.due)],pdfP)}
+function rpdf(){var r=rtab(),s=r.s;
+function ro(g,f){var b=[];Object.keys(g).sort().forEach(function(k){var o=g[k];b.push([f(k),M(o.sale),M(o.rec),M(o.exp),M(o.sale-o.exp)])});return b}
+var cs={1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}};
+mkpdf("report-"+rm+".pdf",APP_NAME+" - Sales & Profit Report",[],["Month: "+mf(rm),"Date: "+fd(today())],[{head:["Date","Sales","Received","Expenses","Profit"],body:ro(r.m,fd),foot:[["Total",M(s.sale),M(s.rec),M(s.exp),M(s.sale-s.exp)]],cs:cs},{head:["Month","Sales","Received","Expenses","Profit"],body:ro(grp(7),mf),cs:cs}],["Total business done: "+M(s.sale),"Total money received: "+M(s.rec),"Total expenses: "+M(s.exp),"Profit: "+M(s.sale-s.exp),"Cash in hand: "+M(s.rec-s.exp),"Credit pending (all customers): "+M(pend())],rpdfP)}
+function printBill(b){var s=db.set,sub=[];if(s.addr)sub.push(s.addr);if(s.phone)sub.push("Phone: "+s.phone);
+var body=b.lines.map(function(l,i){return[String(i+1),T(l.n),l.q+" "+T(l.u),M(l.r),M(r2(l.q*l.r))]});
+var foot=[["","","","Subtotal",M(b.sub)]];if(b.taxp)foot.push(["","","","Tax ("+b.taxp+"%)",M(b.tax)]);foot.push(["","","","Total",M(b.tot)]);
+mkpdf("bill-"+b.no+".pdf",s.shop||APP_NAME,sub,["BILL No: "+b.no,"Date: "+fd(b.d),"Billed to: "+(b.name||"Customer")],[{head:["#","Item","Qty","Rate","Amount"],body:body,foot:foot,cs:{2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}}}],["Payment: "+(b.mode==="credit"?"On credit":"Paid"),"Thank you for your business!"],function(){printBillP(b)})}
+function backupCard(){return '<div class="card"><h2>Backup & Restore</h2>'+((!store||!storeOk)?'<p class="red">This browser is not saving your data. Download a backup after every session.</p>':'<p class="mute">Your data is saved in this browser only. Clearing browser data or opening the file in another browser or phone will not show it, so download a backup regularly.</p>')+'<p class="mute">Last backup: '+(db.lb?fd(db.lb):'never')+'</p><button onclick="bkp()">Download backup</button><label style="display:block;margin-top:10px">Restore from a backup file</label><input type="file" accept=".json,application/json" onchange="rst(this)"></div>'}
+function bkp(){db.lb=today();save();dl("khata-backup-"+today()+".json",new Blob([JSON.stringify(db)],{type:"application/json"}));home()}
+function rst(i){var f=i.files&&i.files[0];if(!f)return;var r=new FileReader();r.onload=function(){try{var d=JSON.parse(r.result);if(!d||!Array.isArray(d.c))throw 0;if(!confirm("Replace all data in this browser with the backup?"))return;db=d;if(!db.s)db.s=[];if(!db.i)db.i=[];if(!db.b)db.b=[];if(!db.set)db.set={shop:"",addr:"",phone:"",cc:"91"};save();home();alert("Backup restored")}catch(e){alert("This file is not a valid backup")}};r.readAsText(f)}
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+home();ping();
+</script>
+</body>
+</html>
